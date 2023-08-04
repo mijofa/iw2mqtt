@@ -1,27 +1,71 @@
 #!/bin/ash
 
-# Get currently connected MACs.
-# Use this to initialise the current state of things immediately before we start watching for changes.
-# NOTE: ash does not support arrays
-# FIXME: Can we check this **after** we start watching for changes?
-wifi_clients="$(for nic in $(iw dev | sed --quiet '/^\s\+Interface\s/ s///p') ; do
-                    iw dev $nic station dump
-                done | sed --quiet '/^Station\s\([[:xdigit:]:]\+\)\(\s(.*)\)\?$/ s//\1/p')"
+# FIXME: This should be unique to each AP
+AVAILABILITY_TOPIC="mijofa-iw2mqtt/availability/mike.abrahall.id.au"
+# FIXME: This should be configurable
+ZONE_NAME="home"
+# FIXME: Grab MQTT_USER/PW/HOST from config as well
 
-# Is Muir (Mike's phone) in the list of connected clients
-echo "$wifi_clients" | grep -qFx '2a:e0:9b:0d:0e:1e'
-# Is Gaby's phone in list of connected clients
-# FIXME: Is this Gaby's MAC?
-echo "$wifi_clients" | grep -qFx '5e:0c:a4:36:ae:81'
+# FIXME: This should somehow include other AP's unique availability topics
+discovery_template='{"device":{"configuration_url":"https://github.com/mijofa/iw2mqtt","manufacturer":"mijofa","model":"iw2mqtt","name":"OpenWRT WiFi Devices","identifiers":["mijofa-iw2mqtt"]},"source_type":"router","icon":"mdi:router-wireless","availability":[{"topic":"'"$AVAILABILITY_TOPIC"'"}],"state_topic":"#STATE_TOPIC#","unique_id":"mijofa-iw2mqtt.#ID#","object_id":"mijofa-iw2mqtt.#ID#","name":"#MAC#"}'
 
 
-# Muir's discovery info example
+# Set up the mqtt "last will and testament".
+# This way when the cript exits (cleanly or not) it tells HA that the entities are unavailable,
+# rather than letting it continue to trust the outdated info.
+# FIXME: OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
+test -L /dev/fd || ln -s /proc/self/fd /dev/fd
+exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --will-topic "$AVAILABILITY_TOPIC" --will-payload "offline" --topic "$AVAILABILITY_TOPIC" --stdin-line)
+echo >&3 "online"
+
+{
+    # Get currently connected MACs.
+    # FIXME: Can we check this **after** we start watching for changes?
+    start_time="$(date +'%Y-%m-%d %T.000000')"  # Intentionally matches the date format of `iw event -T`
+    for nic in $(iw dev | sed --quiet '/^\s\+Interface\s/ s///p') ; do
+        iw dev $nic station dump
+    done | sed --quiet '/^Station\s\([[:xdigit:]:]\+\)\(\s(.*)\)\?$/ s//\1/p' | while read mac ; do
+        echo "[$start_time]: $nic: new station $mac"
+    done
+
+    # Monitor connection changes
+#    iw_regexp="^\[([[:digit:]-]{10} [[:digit:]:.]{15})\]: ([[:alnum:]]+): (new|del) station ([[:xdigit:]:]{17})$"
+#    iw event -T | tee /dev/stderr | sed --quiet --regexp-extended "/$iw_regexp/{s//\3 \4 \1/;p}p" | tee /dev/stderr
+    iw event -T
+} | while read date time nic event station mac ; do
+    # Consider this a hearbeat
+    echo "online" >&3
+
+    # Ignore the "unknown event" lines we get from `iw event`
+    # NOTE: neither grep or sed support unbuffered output in busybox
+    test "$station" == "station" || continue
+
+    state_topic="mijofa-iw2mqtt/tracker/${mac//:/-}"
+
+    discovery_topic="homeassistant/device_tracker/mijofa-iw2mqtt/${mac//:/-}/config"
+    # FIXME: Use a json parser: https://openwrt.org/docs/guide-developer/jshn
+    discovery_data=${discovery_template//#STATE_TOPIC#/$state_topic}
+    discovery_data=${discovery_data//#MAC#/$mac}
+    discovery_data=${discovery_data//#ID#/${mac//:/-}}
+    # FIXME: Should this have --retain?
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data"
+
+    if [ "$event" = "new" ] ; then
+        state="$ZONE_NAME"
+    else
+        state="not_home"
+    fi
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$state_topic" --message "$state" --retain
+
+    # We need to send this **after** HA notices the discovery config and starts listening.
+    # FIXME: This is still generally too early
+    echo "online" >&3
+done
+
+# Discovery info example/template
 # NOTE: By ensuring all "device" dicts are identical, we can have all the entities grouped in the same device
-# NOTE: I don't really like that I'm using the "NFC" icon, but the "wireless" one looks shit.
-#       'mdi:router-wireless' is probably a decent default if not doing unique icons for each device.
-#       I'm using 'mdi:cellphone-message' for Gaby
 # ref: https://www.home-assistant.io/integrations/device_tracker.mqtt/#using-the-discovery-protocol
-# topic: homeassistant/device_tracker/mijofa-iw2mqtt/2a-e0-9b-0d-0e-1e/config
+# topic: homeassistant/device_tracker/mijofa-iw2mqtt/#ID#/config
 # { "device": {
 #     "configuration_url": "https://github.com/mijofa/iw2mqtt",
 #     "manufacturer": "mijofa",
@@ -43,36 +87,8 @@ echo "$wifi_clients" | grep -qFx '5e:0c:a4:36:ae:81'
 #     {"topic": "mijofa-iw2mqtt/availability/mike.abrahall.id.au"}
 #   ],
 #   # Entity specific
-#   "state_topic": "mijofa-iw2mqtt/tracker/2a-e0-9b-0d-0e-1e",
-#   "unique_id": "mijofa-iw2mqtt.2a-e0-9b-0d-0e-1e",
-#   "object_id": "mijofa-iw2mqtt.2a-e0-9b-0d-0e-1e",
-#   "name": "2a:e0:9b:0d:0e:1e"
-# }
-# And for Gaby's
-# topic: homeassistant/device_tracker/mijofa-iw2mqtt/5e-0c-a4-36-ae-81/config
-# { "device": {
-#     "configuration_url": "https://github.com/mijofa/iw2mqtt",
-#     "manufacturer": "mijofa",
-#     "model": "iw2mqtt",
-#     "name": "OpenWRT WiFi Devices",
-#     "identifiers": ["mijofa-iw2mqtt"]
-#     # FIXME: This would need to be identical for all trackers in order to combine them properly.
-#     #        Is this even supposed to have these MACs?
-#     # "connections": [
-#     #     ["mac", "2a:e0:9b:0d:0e:1e"],
-#     #     ["mac", "5e:0c:a4:36:ae:81"]
-#     # ],
-#   },
-#   "source_type": "router",
-#   "icon": "mdi:router-wireless",
-#   "availability": [
-#     # This is unique to each AP so we can set a will-topic & will-payload properly.
-#     # However every AP needs to know about each other for this to work properly.
-#     {"topic": "mijofa-iw2mqtt/availability/mike.abrahall.id.au"}
-#   ],
-#   # Entity specific
-#   "state_topic": "mijofa-iw2mqtt/5e-0c-a4-36-ae-81",
-#   "unique_id": "mijofa-iw2mqtt.5e-0c-a4-36-ae-81",
-#   "object_id": "mijofa-iw2mqtt.5e-0c-a4-36-ae-81",
-#   "name": "5e:0c:a4:36:ae:81"
+#   "state_topic": "mijofa-iw2mqtt/tracker/#ID#",
+#   "unique_id": "mijofa-iw2mqtt.#ID#",
+#   "object_id": "mijofa-iw2mqtt.#ID#",
+#   "name": "#MAC#"
 # }
