@@ -8,6 +8,19 @@ The intended goal is to have this running on the OpenWRT AP (doesn't need to
 be OpenWRT, so long as it has ``iw event`` and ``mosquitto_pub``) sending
 updates to Home Assistant via MQTT.
 
+Installing
+==========
+TODO
+
+Currently just scping the script to ~ on the OpenWRT device
+
+Running
+=======
+TODO
+
+Set the MQTT_USER, MQTT_PW, & MQTT_HOST variables as need.
+Then run `./iw2mqtt.sh &`
+
 Dev notes
 =========
 Inspired largely by `awilliams/wifi-presence <https://github.com/awilliams/wifi-presence>`_ & `dersimn/owrtwifi2mqtt <https://github.com/dersimn/owrtwifi2mqtt>`_.
@@ -31,5 +44,10 @@ All this needs to do is:
 * set the topic state to "offline" when not running
   How does mqtt "last will" work?
 
+The "zone" state is optional, but would be useful for running this in a separate building over the VPN.
 
-The "zone" state is optional, but would be useful for running this for another building over the VPN.
+TODO
+----
+* Hook into uci for MQTT server details & credentials
+* Make things work a bit better if there's multiple APs running in separate zones
+* Make a .ipk package
