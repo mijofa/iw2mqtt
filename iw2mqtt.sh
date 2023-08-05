@@ -3,7 +3,7 @@
 # FIXME: This should be unique to each AP
 AVAILABILITY_TOPIC="mijofa-iw2mqtt/availability/mike.abrahall.id.au"
 # FIXME: This should be configurable
-ZONE_NAME="home"
+ZONE_NAME=${ZONE_NAME:-home}
 # FIXME: Grab MQTT_USER/PW/HOST from config as well
 
 # FIXME: This should somehow include other AP's unique availability topics
@@ -36,6 +36,8 @@ echo >&3 "online"
 #    iw event -T | tee /dev/stderr | sed --quiet --regexp-extended "/$iw_regexp/{s//\3 \4 \1/;p}p" | tee /dev/stderr
     iw event -T
 } | while read date time nic event station mac ; do
+    date=${date#[}
+    time=${time%]:}
     # Consider this a hearbeat
     echo "online" >&3
 
@@ -65,6 +67,7 @@ echo >&3 "online"
     else
         state="$ZONE_NAME"
     fi
+    echo "${date}T${time} $mac $state"
     mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$state_topic" --message "$state" --retain
     # FIXME: Use json_attributes topic and set some things like "connection time" and maybe even GPS co-ords
 
