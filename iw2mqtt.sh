@@ -9,9 +9,15 @@ ZONE_NAME="home"
 # FIXME: This should somehow include other AP's unique availability topics
 discovery_template='{"device":{"configuration_url":"https://github.com/mijofa/iw2mqtt","manufacturer":"mijofa","model":"iw2mqtt","name":"OpenWRT WiFi Devices","identifiers":["mijofa-iw2mqtt"]},"source_type":"router","icon":"mdi:router-wireless","availability":[{"topic":"'"$AVAILABILITY_TOPIC"'"}],"state_topic":"#STATE_TOPIC#","unique_id":"mijofa-iw2mqtt.#ID#","object_id":"mijofa-iw2mqtt.#ID#","name":"#MAC#"}'
 
+# Get currently connected MACs.
+list_connected_MACs() {
+    for nic in $(iw dev | sed --quiet '/^\s\+Interface\s/ s///p') ; do
+        iw dev $nic station dump
+    done | sed --quiet '/^Station\s\([[:xdigit:]:]\+\)\(\s(.*)\)\?$/ s//\1/p'
+}
 
 # Set up the mqtt "last will and testament".
-# This way when the cript exits (cleanly or not) it tells HA that the entities are unavailable,
+# This way when the script exits (cleanly or not) it tells HA that the entities are unavailable,
 # rather than letting it continue to trust the outdated info.
 # FIXME: OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
 test -L /dev/fd || ln -s /proc/self/fd /dev/fd
@@ -19,12 +25,9 @@ exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HO
 echo >&3 "online"
 
 {
-    # Get currently connected MACs.
     # FIXME: Can we check this **after** we start watching for changes?
     start_time="$(date +'%Y-%m-%d %T.000000')"  # Intentionally matches the date format of `iw event -T`
-    for nic in $(iw dev | sed --quiet '/^\s\+Interface\s/ s///p') ; do
-        iw dev $nic station dump
-    done | sed --quiet '/^Station\s\([[:xdigit:]:]\+\)\(\s(.*)\)\?$/ s//\1/p' | while read mac ; do
+    list_connected_MACs| while read mac ; do
         echo "[$start_time]: $nic: new station $mac"
     done
 
@@ -50,12 +53,20 @@ echo >&3 "online"
     # FIXME: Should this have --retain?
     mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data"
 
-    if [ "$event" = "new" ] ; then
-        state="$ZONE_NAME"
+    if [ "$event" = "del" ] ; then
+        # There seems to be some cases where a "del" event goes while the device is still connected.
+        # I'm not sure what's going on, but I suspect this is when things try to connect to both 5ghz & 2.4ghz at the same time,
+        # then disconnect 2.4ghz once the 5ghz succeeds
+        if list_connected_MACs | grep -qFx "$mac" ; then
+            continue
+        else
+            state="not_home"
+        fi
     else
-        state="not_home"
+        state="$ZONE_NAME"
     fi
     mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$state_topic" --message "$state" --retain
+    # FIXME: Use json_attributes topic and set some things like "connection time" and maybe even GPS co-ords
 
     # We need to send this **after** HA notices the discovery config and starts listening.
     # FIXME: This is still generally too early
