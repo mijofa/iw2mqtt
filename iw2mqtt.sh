@@ -2,16 +2,36 @@
 
 # FIXME: This should be unique to each AP
 AVAILABILITY_TOPIC="mijofa-iw2mqtt/availability/mike.abrahall.id.au"
+STATE_TOPIC="mijofa-iw2mqtt/state/mike.abrahall.id.au"
 # FIXME: This should be configurable
 ZONE_NAME=${ZONE_NAME:-home}
 # FIXME: Grab MQTT_USER/PW/HOST from config as well
 
 # FIXME: This should somehow include other AP's unique availability topics
-discovery_template='{"device":{"configuration_url":"https://github.com/mijofa/iw2mqtt","manufacturer":"mijofa","model":"iw2mqtt","name":"OpenWRT WiFi Devices","identifiers":["mijofa-iw2mqtt"]},"source_type":"#SOURCETYPE#","icon":"mdi:router-wireless","availability":[{"topic":"'"$AVAILABILITY_TOPIC"'"}],"state_topic":"#STATE_TOPIC#","unique_id":"mijofa-iw2mqtt.#ID#","object_id":"mijofa-iw2mqtt.#ID#","name":"#MAC#"}'
+discovery_template='{"device":{
+                         "configuration_url":"https://github.com/mijofa/iw2mqtt",
+                         "manufacturer":"mijofa",
+                         "model":"iw2mqtt",
+                         "name":"OpenWRT WiFi Devices",
+                         "identifiers":["mijofa-iw2mqtt"]
+                    },
+                    "source_type":"#SOURCETYPE#",
+                    "icon":"mdi:router-wireless",
+                    "availability":[{"topic":"'"$AVAILABILITY_TOPIC"'"}],
+
+                    "state_topic":"'"$STATE_TOPIC"'",
+                    "value_template":"{{\"#MAC#\" in value_json.connected_devices or \"#MAC#\" in value_json.previous_devices}}",
+                    "value_home":true,
+                    "value_not_home":false,
+                    "unique_id":"mijofa-iw2mqtt.#ID#",
+                    "object_id":"mijofa-iw2mqtt.#ID#",
+                    "name":"#MAC#"}'
 # FIXME: source_type should be 'router' not 'gps', but routers don't seem to be able to specify any zone other than "home"
 if [[ "$ZONE_NAME" == "home" ]] ; then
     discovery_template=${discovery_template/#SOURCETYPE#/router}
 else
+    echo "ERROR: Sorry, non 'home' zone names are not currently supported."
+    exit 2
     discovery_template=${discovery_template/#SOURCETYPE#/gps}
 fi
 
@@ -53,8 +73,13 @@ configure_discovery_for_mac() {
     mqtt_pub "$discovery_topic" "$discovery_data"
 }
 
-# Check whether MAC is connected, and send MQTT update if it is not
-maybe_disconnected_mac() {
+update_connections() {
+    # We keep the previous list around so that HA can do some delayed device expiry for intermittent WiFi outages
+    previous_devices_list="${connected_devices_list:-[]}"
+    connected_devices_list="$(list_connected_MACs | sed 's/^/ "/;1s/^ /[/;s/$/",/;$s/,$/]/')"
+    mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
+                              \"connected_devices\":$connected_devices_list,
+                              \"previous_devices\":$previous_devices_list}"
 }
 
 # Set up the mqtt "last will and testament".
@@ -65,43 +90,28 @@ test -L /dev/fd || ln -s /proc/self/fd /dev/fd
 exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --will-topic "$AVAILABILITY_TOPIC" --will-payload "offline" --topic "$AVAILABILITY_TOPIC" --stdin-line)
 echo >&3 "online"
 
-{
-    # FIXME: Can we check this **after** we start watching for changes?
-    start_time="$(date +'%Y-%m-%d %T.000000')"  # Intentionally matches the date format of `iw event -T`
-    list_connected_MACs| while read mac ; do
-        echo "[$start_time]: $nic: new station $mac"
-    done
+list_connected_MACs | while read mac ; do
+    configure_discovery_for_mac "$mac"
+done
+configure_discovery_for_mac "5e:0c:a4:36:ae:81"
+update_connections
 
-    # Monitor connection changes
-    # NOTE: neither grep or sed support unbuffered output in busybox
-#    iw_regexp="^\[([[:digit:]-]{10} [[:digit:]:.]{15})\]: ([[:alnum:]]+): (new|del) station ([[:xdigit:]:]{17})$"
-#    iw event -T | tee /dev/stderr | sed --quiet --regexp-extended "/$iw_regexp/{s//\3 \4 \1/;p}p" | tee /dev/stderr
-    iw event -T
+{
+    iw event -T &
+    while sleep 6 ; do
+        printf '[%s]: n/a: ping station ALL\n' "$(date +'%Y-%m-%d %T.000000')"
+    done
 } | while read date time nic event station mac ; do
-    date=${date#[}
-    time=${time%]:}
-    # Consider this a hearbeat
-    echo "online" >&3
+    echo >&3 "online"
 
     # Ignore the "unknown event" lines we get from `iw event`
-    test "$station" == "station" || continue
+    [[ "$station" == "station" ]] || continue
 
-    # FIXME: Use json_attributes topic and set some things like "connection time"?
-    if [ "$event" = "new" ] ; then
-        configure_discovery_for_mac "$mac"
-        mqtt_pub "mijofa-iw2mqtt/tracker/${mac//:/-}" "$ZONE_NAME"
-    else
-        # When connecting I often see: new wlan0 ..., new wlan1 ..., del wlan0 ...
-        # I'm not sure what's going on, but I suspect this is Android trying to connect to both 5ghz & 2.4ghz at the same time,
-        # then disconnecting 2.4ghz once the 5ghz succeeds
-        if ! list_connected_MACs | grep -qFx "$1" ; then
-            mqtt_pub "mijofa-iw2mqtt/tracker/${1//:/-}" "not_home"
-        fi
-    fi
+    # Do discovery for new connections (not disconnects)
+    [[ "$event" == "new" ]] && configure_discovery_for_mac "$mac"
 
-    # We need to send this **after** HA notices the discovery config and starts listening.
-    # FIXME: This is still generally too early
-    echo "online" >&3
+    # Update active connections with new connections and every interval
+    update_connections
 done
 
 # Discovery info example/template
