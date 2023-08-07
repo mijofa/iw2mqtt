@@ -97,10 +97,13 @@ configure_discovery_for_mac "5e:0c:a4:36:ae:81"
 update_connections
 
 {
-    iw event -T &
+    # FIXME: The only reason for this interval is so that we can update disconnects only a minute later.
+    #        How can we do this better?
     while sleep 6 ; do
         printf '[%s]: n/a: ping station ALL\n' "$(date +'%Y-%m-%d %T.000000')"
-    done
+    done &
+
+    iw event -T
 } | while read date time nic event station mac ; do
     echo >&3 "online"
 
