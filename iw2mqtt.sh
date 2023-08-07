@@ -10,10 +10,27 @@ ZONE_NAME=${ZONE_NAME:-home}
 discovery_template='{"device":{"configuration_url":"https://github.com/mijofa/iw2mqtt","manufacturer":"mijofa","model":"iw2mqtt","name":"OpenWRT WiFi Devices","identifiers":["mijofa-iw2mqtt"]},"source_type":"#SOURCETYPE#","icon":"mdi:router-wireless","availability":[{"topic":"'"$AVAILABILITY_TOPIC"'"}],"state_topic":"#STATE_TOPIC#","unique_id":"mijofa-iw2mqtt.#ID#","object_id":"mijofa-iw2mqtt.#ID#","name":"#MAC#"}'
 # FIXME: source_type should be 'router' not 'gps', but routers don't seem to be able to specify any zone other than "home"
 if [[ "$ZONE_NAME" == "home" ]] ; then
-    discovery_template=${discovery_template/#SOURCETYPE#/rorouterr}
+    discovery_template=${discovery_template/#SOURCETYPE#/router}
 else
     discovery_template=${discovery_template/#SOURCETYPE#/gps}
 fi
+
+if [[ "$1" != "--verbose" ]] ; then
+    VERBOSE="no"
+fi
+maybe_log() {
+    test "$VERBOSE" == "no" || printf '%s\n' "$@" >&2
+}
+
+mqtt_pub() {
+    topic=$1
+    shift
+    message=$1
+    shift
+    maybe_log "MQTT: $topic \"$message\""
+
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$topic" --message "$message" "$@"
+}
 
 # Get currently connected MACs.
 list_connected_MACs() {
@@ -33,19 +50,11 @@ configure_discovery_for_mac() {
     discovery_data=${discovery_data//#MAC#/$1}
     discovery_data=${discovery_data//#ID#/$device_id}
     # FIXME: Should this have --retain?
-    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data"
-
+    mqtt_pub "$discovery_topic" "$discovery_data"
 }
 
-# Check whether MAC is connected, and send MQTT update accordingly
-update_mac() {
-    if list_connected_MACs | grep -qFx "$1" ; then
-        state="$ZONE_NAME"
-    else
-        state="not_home"
-    fi
-    echo "${date}T${time} $mac $state"
-    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "mijofa-iw2mqtt/tracker/${1//:/-}" --message "$state" --retain
+# Check whether MAC is connected, and send MQTT update if it is not
+maybe_disconnected_mac() {
 }
 
 # Set up the mqtt "last will and testament".
@@ -80,12 +89,14 @@ echo >&3 "online"
     # FIXME: Use json_attributes topic and set some things like "connection time"?
     if [ "$event" = "new" ] ; then
         configure_discovery_for_mac "$mac"
-        mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "mijofa-iw2mqtt/tracker/${1//:/-}" --message "$ZONE_NAME" --retain
+        mqtt_pub "mijofa-iw2mqtt/tracker/${mac//:/-}" "$ZONE_NAME"
     else
         # When connecting I often see: new wlan0 ..., new wlan1 ..., del wlan0 ...
         # I'm not sure what's going on, but I suspect this is Android trying to connect to both 5ghz & 2.4ghz at the same time,
         # then disconnecting 2.4ghz once the 5ghz succeeds
-        update_mac
+        if ! list_connected_MACs | grep -qFx "$1" ; then
+            mqtt_pub "mijofa-iw2mqtt/tracker/${1//:/-}" "not_home"
+        fi
     fi
 
     # We need to send this **after** HA notices the discovery config and starts listening.
