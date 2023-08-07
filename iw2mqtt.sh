@@ -7,7 +7,13 @@ ZONE_NAME=${ZONE_NAME:-home}
 # FIXME: Grab MQTT_USER/PW/HOST from config as well
 
 # FIXME: This should somehow include other AP's unique availability topics
-discovery_template='{"device":{"configuration_url":"https://github.com/mijofa/iw2mqtt","manufacturer":"mijofa","model":"iw2mqtt","name":"OpenWRT WiFi Devices","identifiers":["mijofa-iw2mqtt"]},"source_type":"router","icon":"mdi:router-wireless","availability":[{"topic":"'"$AVAILABILITY_TOPIC"'"}],"state_topic":"#STATE_TOPIC#","unique_id":"mijofa-iw2mqtt.#ID#","object_id":"mijofa-iw2mqtt.#ID#","name":"#MAC#"}'
+discovery_template='{"device":{"configuration_url":"https://github.com/mijofa/iw2mqtt","manufacturer":"mijofa","model":"iw2mqtt","name":"OpenWRT WiFi Devices","identifiers":["mijofa-iw2mqtt"]},"source_type":"#SOURCETYPE#","icon":"mdi:router-wireless","availability":[{"topic":"'"$AVAILABILITY_TOPIC"'"}],"state_topic":"#STATE_TOPIC#","unique_id":"mijofa-iw2mqtt.#ID#","object_id":"mijofa-iw2mqtt.#ID#","name":"#MAC#"}'
+# FIXME: source_type should be 'router' not 'gps', but routers don't seem to be able to specify any zone other than "home"
+if [[ "$ZONE_NAME" == "home" ]] ; then
+    discovery_template=${discovery_template/#SOURCETYPE#/rorouterr}
+else
+    discovery_template=${discovery_template/#SOURCETYPE#/gps}
+fi
 
 # Get currently connected MACs.
 list_connected_MACs() {
