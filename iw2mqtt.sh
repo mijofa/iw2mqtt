@@ -22,10 +22,36 @@ list_connected_MACs() {
     done | sed --quiet '/^Station\s\([[:xdigit:]:]\+\)\(\s(.*)\)\?$/ s//\1/p'
 }
 
+# Update the discovery topic so that HA knows to monitor this device
+# FIXME: This really should only be done once per device, not every single time there's a change
+configure_discovery_for_mac() {
+    discovery_topic="homeassistant/device_tracker/mijofa-iw2mqtt/${1//:/-}/config"
+    device_id=${1//:/-}
+    state_topic="mijofa-iw2mqtt/tracker/$device_id"
+    # FIXME: Use a json parser: https://openwrt.org/docs/guide-developer/jshn
+    discovery_data=${discovery_template//#STATE_TOPIC#/$state_topic}
+    discovery_data=${discovery_data//#MAC#/$1}
+    discovery_data=${discovery_data//#ID#/$device_id}
+    # FIXME: Should this have --retain?
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data"
+
+}
+
+# Check whether MAC is connected, and send MQTT update accordingly
+update_mac() {
+    if list_connected_MACs | grep -qFx "$1" ; then
+        state="$ZONE_NAME"
+    else
+        state="not_home"
+    fi
+    echo "${date}T${time} $mac $state"
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "mijofa-iw2mqtt/tracker/${1//:/-}" --message "$state" --retain
+}
+
 # Set up the mqtt "last will and testament".
 # This way when the script exits (cleanly or not) it tells HA that the entities are unavailable,
 # rather than letting it continue to trust the outdated info.
-# FIXME: OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
+# FIXME: Why OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
 test -L /dev/fd || ln -s /proc/self/fd /dev/fd
 exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --will-topic "$AVAILABILITY_TOPIC" --will-payload "offline" --topic "$AVAILABILITY_TOPIC" --stdin-line)
 echo >&3 "online"
@@ -38,6 +64,7 @@ echo >&3 "online"
     done
 
     # Monitor connection changes
+    # NOTE: neither grep or sed support unbuffered output in busybox
 #    iw_regexp="^\[([[:digit:]-]{10} [[:digit:]:.]{15})\]: ([[:alnum:]]+): (new|del) station ([[:xdigit:]:]{17})$"
 #    iw event -T | tee /dev/stderr | sed --quiet --regexp-extended "/$iw_regexp/{s//\3 \4 \1/;p}p" | tee /dev/stderr
     iw event -T
@@ -48,34 +75,18 @@ echo >&3 "online"
     echo "online" >&3
 
     # Ignore the "unknown event" lines we get from `iw event`
-    # NOTE: neither grep or sed support unbuffered output in busybox
     test "$station" == "station" || continue
 
-    state_topic="mijofa-iw2mqtt/tracker/${mac//:/-}"
-
-    discovery_topic="homeassistant/device_tracker/mijofa-iw2mqtt/${mac//:/-}/config"
-    # FIXME: Use a json parser: https://openwrt.org/docs/guide-developer/jshn
-    discovery_data=${discovery_template//#STATE_TOPIC#/$state_topic}
-    discovery_data=${discovery_data//#MAC#/$mac}
-    discovery_data=${discovery_data//#ID#/${mac//:/-}}
-    # FIXME: Should this have --retain?
-    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data"
-
-    if [ "$event" = "del" ] ; then
-        # There seems to be some cases where a "del" event goes while the device is still connected.
-        # I'm not sure what's going on, but I suspect this is when things try to connect to both 5ghz & 2.4ghz at the same time,
-        # then disconnect 2.4ghz once the 5ghz succeeds
-        if list_connected_MACs | grep -qFx "$mac" ; then
-            continue
-        else
-            state="not_home"
-        fi
+    # FIXME: Use json_attributes topic and set some things like "connection time"?
+    if [ "$event" = "new" ] ; then
+        configure_discovery_for_mac "$mac"
+        mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "mijofa-iw2mqtt/tracker/${1//:/-}" --message "$ZONE_NAME" --retain
     else
-        state="$ZONE_NAME"
+        # When connecting I often see: new wlan0 ..., new wlan1 ..., del wlan0 ...
+        # I'm not sure what's going on, but I suspect this is Android trying to connect to both 5ghz & 2.4ghz at the same time,
+        # then disconnecting 2.4ghz once the 5ghz succeeds
+        update_mac
     fi
-    echo "${date}T${time} $mac $state"
-    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$state_topic" --message "$state" --retain
-    # FIXME: Use json_attributes topic and set some things like "connection time" and maybe even GPS co-ords
 
     # We need to send this **after** HA notices the discovery config and starts listening.
     # FIXME: This is still generally too early
