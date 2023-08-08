@@ -8,12 +8,16 @@ STATE_TOPIC="mijofa-iw2mqtt/state/$HOSTNAME"
 UPDATE_INTERVAL="${UPDATE_INTERVAL:-1m}"
 # FIXME: Grab LOCATION & MQTT_USER/PW/HOST from config as well
 
-# use payload_reset if location is set, otherwise payload_home
+# Use payload_reset if location is set, otherwise payload_home
 home_or_reset="${LOCATION:+reset}"
 home_or_reset="${home_or_reset:-home}"
 
+# Set source_type to gps if a location is set, otherwise router
+# FIXME: source_type should be 'router' always, but routers don't seem to be able to specify any zone other than "home"
+gps_or_router="${LOCATION:+gps}"
+gps_or_router="${gps_or_router:-router}"
+
 # FIXME: This should somehow include other AP's unique availability topics
-# FIXME: source_type should be 'router' not 'gps', but routers don't seem to be able to specify any zone other than "home"
 # FIXME: The configuration_url should be something like a Luci URL, not the upstream source/documentation
 discovery_template='{"device":{
                          "configuration_url":"https://github.com/mijofa/iw2mqtt",
@@ -22,7 +26,7 @@ discovery_template='{"device":{
                          "name":"OpenWRT WiFi Devices",
                          "identifiers":["mijofa-iw2mqtt"]
                     },
-                    "source_type":"gps",
+                    "source_type":"'"$gps_or_router"'",
                     "icon":"mdi:router-wireless",
                     "availability":[{"topic":"'"$AVAIL_TOPIC"'",
                                      "value_template":"{{ True if (value_json is not boolean) else value_json }}",
