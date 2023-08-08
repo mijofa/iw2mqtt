@@ -1,21 +1,40 @@
 #!/bin/ash
 
-HOSTNAME="$(uci get system.@system[0].hostname)"
+if uci get iw2mqtt &>/dev/null ; then
+    MQTT_HOST=$(uci get iw2mqtt.mqtt_host)
+    MQTT_USER=$(uci get iw2mqtt.mqtt_user)
+    MQTT_PASS=$(uci get iw2mqtt.mqtt_pass)
+    HOSTNAME=$(uci get iw2mqtt.hostname 2>/dev/null)
+    UPDATE_INTERVAL=$(uci get iw2mqtt.update_interval 2>/dev/null)
+    LOCATION=$(uci get iw2mqtt.location_json 2>/dev/null)
+else
+    echo "ERROR: Not configured" >&2
+    echo "Please configure via UCI before running again. Example:" >&2
+    echo '    uci import iw2mqtt </dev/null' >&2
+    echo '    uci set iw2mqtt.mqtt_host="$MQTT_HOST"  # Required' >&2
+    echo '    uci set iw2mqtt.mqtt_user="$MQTT_USER"  # Required' >&2
+    echo '    uci set iw2mqtt.mqtt_pass="$MQTT_PASS"  # Required' >&2
+    echo '    uci set iw2mqtt.hostname="example.net"  # Optional, defaults to $(uci get system.@system[0].hostname)' >&2
+    echo '    uci set iw2mqtt.update_interval="1m"  # Optional, default: 1 minute' >&2
+    echo "    uci set iw2mqtt.location_json='"'{"latitude":-0.0,"longitude":0.0,"gps_accuracy":100}'"'  # Optional, leave blank for 'home'"  >&2
+    exit 1
+fi
 
-# FIXME: This should be unique to each AP
+## Set the default config options
+HOSTNAME="${HOSTNAME:-$(uci get system.@system[0].hostname)}"
 AVAIL_TOPIC="mijofa-iw2mqtt/availability/$HOSTNAME"
 STATE_TOPIC="mijofa-iw2mqtt/state/$HOSTNAME"
+# Set the the necessary default
 UPDATE_INTERVAL="${UPDATE_INTERVAL:-1m}"
-# FIXME: Grab LOCATION & MQTT_USER/PW/HOST from config as well
-
 # Use payload_reset if location is set, otherwise payload_home
 home_or_reset="${LOCATION:+reset}"
 home_or_reset="${home_or_reset:-home}"
-
 # Set source_type to gps if a location is set, otherwise router
 # FIXME: source_type should be 'router' always, but routers don't seem to be able to specify any zone other than "home"
 gps_or_router="${LOCATION:+gps}"
 gps_or_router="${gps_or_router:-router}"
+# NOTE: Must go **after** the gps_or_router & home_or_reset stanzas
+LOCATION="${LOCATION:-true}"
 
 # FIXME: This should somehow include other AP's unique availability topics
 # FIXME: The configuration_url should be something like a Luci URL, not the upstream source/documentation
@@ -50,7 +69,7 @@ discovery_template='{"device":{
 # rather than letting it continue to trust the outdated info.
 # FIXME: Why OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
 test -L /dev/fd || ln -s /proc/self/fd /dev/fd
-exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --will-topic "$AVAIL_TOPIC" --will-payload "false" --will-retain --topic "$STATE_TOPIC" --stdin-line)
+exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --will-topic "$AVAIL_TOPIC" --will-payload "false" --will-retain --topic "$STATE_TOPIC" --stdin-line)
 
 # Get currently connected MACs.
 list_connected_MACs() {
@@ -70,7 +89,7 @@ configure_discovery_for_mac() {
     discovery_data=${discovery_data//#MAC#/$1}
     discovery_data=${discovery_data//#ID#/$device_id}
     # FIXME: Should this have --retain?
-    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data"
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data"
 }
 
 update_connections() {
@@ -105,7 +124,7 @@ done
 update_connections
 
 # Tell HA to mark the entities as available now because the current mqtt data is valid
-mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$AVAIL_TOPIC" --message "${LOCATION:-true}" --retain
+mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$AVAIL_TOPIC" --message "$LOCATION" --retain
 
 {
     # FIXME: The only reason for this interval is so that we can update disconnects only a minute later.
