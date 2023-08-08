@@ -1,3 +1,9 @@
+iw2mqtt (0.2.2) unstable; urgency=medium
+
+  * Added "reload" service call
+
+ -- Mike Abrahall <mike@abrahall.id.au>  Tue, 08 Aug 2023 23:54:08 +1000
+
 iw2mqtt (0.2.1) unstable; urgency=medium
 
   * Fix procd initscript to better handle service stops
