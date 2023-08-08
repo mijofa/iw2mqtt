@@ -113,7 +113,6 @@ exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HO
 list_connected_MACs | while read mac ; do
     configure_discovery_for_mac "$mac"
 done
-configure_discovery_for_mac "5e:0c:a4:36:ae:81"
 update_connections
 
 # Tell HA that the current MQTT data is valid, and it can mark the entities as available now.
