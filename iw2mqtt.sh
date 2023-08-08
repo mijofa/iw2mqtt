@@ -45,21 +45,12 @@ discovery_template='{"device":{
                     "object_id":"mijofa-iw2mqtt.#ID#",
                     "name":"#MAC#"}'
 
-if [[ "$1" != "--verbose" ]] ; then
-    LOG_MQTT="no"
-fi
-
-mqtt_pub() {
-    topic=$1
-    shift
-    message=$1
-    shift
-    # Would be nice to use '%q' here, but BusyBox/OpenWRT's printf doesn't support that
-    test "$LOG_MQTT" == "no" || printf '%s: mqtt_pub(%s): %s\n' "$(date -Iseconds)" "$topic" "$message" >&2
-    # test "$LOG_MQTT" == "no" || echo "$message" | sed "s|^|$(date -Iseconds) mqtt_pub($topic) |" >&2
-
-    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$topic" --message "$message" "$@"
-}
+# Set up state_topic and mqtt's "last will and testament".
+# This way when the script exits (cleanly or not) it tells HA that the entities are unavailable,
+# rather than letting it continue to trust the outdated info.
+# FIXME: Why OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
+test -L /dev/fd || ln -s /proc/self/fd /dev/fd
+exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --will-topic "$AVAIL_TOPIC" --will-payload "false" --will-retain --topic "$STATE_TOPIC" --stdin-line)
 
 # Get currently connected MACs.
 list_connected_MACs() {
@@ -79,17 +70,19 @@ configure_discovery_for_mac() {
     discovery_data=${discovery_data//#MAC#/$1}
     discovery_data=${discovery_data//#ID#/$device_id}
     # FIXME: Should this have --retain?
-    mqtt_pub "$discovery_topic" "$discovery_data"
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data"
 }
 
 update_connections() {
     # We keep the previous list around for some delayed device expiry for intermittent WiFi outages.
     # This is implemented by having the value_template simply check both lists
     previous_devices_list="${connected_devices_list:-[]}"
-    connected_devices_list="$(list_connected_MACs | sed 's/^/ "/;1s/^ /[/;s/$/",/;$s/,$/]/')"
-    mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
-                              \"connected_devices\":$connected_devices_list,
-                              \"previous_devices\":$previous_devices_list}"
+    # connected_devices_list="$(list_connected_MACs | sed 's/^/ "/;1s/^ /[/;s/$/",/;$s/,$/]/')"
+    connected_devices_list="$(list_connected_MACs | sed '1s/^/["/;:a;N;$!ba;s/\n/","/g;s/$/"]/')"
+    echo >&3 "{\"last_update\":$(date +'%s'),\"connected_devices\":$connected_devices_list,\"previous_devices\":$previous_devices_list}"
+    # mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
+    #                           \"connected_devices\":$connected_devices_list,
+    #                           \"previous_devices\":$previous_devices_list}"
 }
 
 new_connection() {
@@ -99,17 +92,11 @@ new_connection() {
     # So just resend the old data, with this 1 MAC address appended,
     # since we also don't care if there's duplicate entries in the list.
     connected_devices_list="${connected_devices_list%]},\"$1\"]"
-    mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
-                              \"connected_devices\":$connected_devices_list,
-                              \"previous_devices\":$previous_devices_list}"
+    echo >&3 "{\"last_update\":$(date +'%s'),\"connected_devices\":$connected_devices_list,\"previous_devices\":$previous_devices_list}"
+    # mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
+    #                           \"connected_devices\":$connected_devices_list,
+    #                           \"previous_devices\":$previous_devices_list}"
 }
-
-# Set up the mqtt "last will and testament".
-# This way when the script exits (cleanly or not) it tells HA that the entities are unavailable,
-# rather than letting it continue to trust the outdated info.
-# FIXME: Why OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
-test -L /dev/fd || ln -s /proc/self/fd /dev/fd
-exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --will-topic "$AVAIL_TOPIC" --will-payload "false" --will-retain --topic "$AVAIL_TOPIC" --stdin-line --retain)
 
 # Pre-load the currently connected devices before we start listening for new devices
 list_connected_MACs | while read mac ; do
@@ -117,8 +104,8 @@ list_connected_MACs | while read mac ; do
 done
 update_connections
 
-# Tell HA that the current MQTT data is valid, and it can mark the entities as available now.
-echo "${LOCATION:-true}" >&3
+# Tell HA to mark the entities as available now because the current mqtt data is valid
+mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --topic "$AVAIL_TOPIC" --message "${LOCATION:-true}" --retain
 
 {
     # FIXME: The only reason for this interval is so that we can update disconnects only a minute later.
