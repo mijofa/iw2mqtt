@@ -65,7 +65,7 @@ discovery_template='{"device":{
                     "name":"#MAC#"}'
 
 # Set up state_topic and mqtt's "last will and testament".
-# This way when the script exits (cleanly or not) it tells HA that the entities are unavailable,
+# This way when the script exits uncleanly it tells HA that the entities are unavailable,
 # rather than letting it continue to trust the outdated info.
 # FIXME: Why OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
 test -L /dev/fd || ln -s /proc/self/fd /dev/fd
@@ -147,3 +147,6 @@ mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$
     # Update new connections immediately instead of waiting for the ping
     [[ "$event" == "new" ]] && new_connection "$mac"
 done
+
+# We still want to tell HA we're offline when we exit cleanly
+mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$AVAIL_TOPIC" --message "false" --retain
