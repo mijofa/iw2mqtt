@@ -1,8 +1,6 @@
 #!/bin/ash
 
-HOSTNAME="$(uci show system.@system[0].hostname)"
-HOSTNAME="${HOSTNAME#*=\'}"
-HOSTNAME="${HOSTNAME%\'}"
+HOSTNAME="$(uci get system.@system[0].hostname)"
 
 # FIXME: This should be unique to each AP
 AVAILABILITY_TOPIC="mijofa-iw2mqtt/availability/$HOSTNAME"
