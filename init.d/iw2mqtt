@@ -1,0 +1,13 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+
+start_service() {
+    # FIXME: jail this because it shouldn't need access to anything else and that sounds like good best-practice
+    #        ref: https://openwrt.org/docs/guide-developer/procd-init-scripts#service_jails
+    procd_open_instance
+    procd_set_param command /usr/bin/iw2mqtt
+    # FIXME: Does 'iw event' work when run as nobody?
+    # procd_set_param user nobody
+    procd_close_instance
+}

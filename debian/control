@@ -9,7 +9,7 @@ Package: iw2mqtt
 XC-Package-Type: udeb
 Architecture: all
 Section: net
-Depends: mosquitto-client-nossl | mosquitto-client-ssl, busybox, iw
+Depends: mosquitto-client-nossl | mosquitto-client-ssl, busybox, iw, procd
 Description: Provide MQTT Device Trackers of WiFi clients
  Publishes WiFi client connections info via MQTT for Home Assistant integratio
 
