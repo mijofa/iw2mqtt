@@ -3,9 +3,9 @@
 HOSTNAME="$(uci get system.@system[0].hostname)"
 
 # FIXME: This should be unique to each AP
-AVAILABILITY_TOPIC="mijofa-iw2mqtt/availability/$HOSTNAME"
+AVAIL_TOPIC="mijofa-iw2mqtt/availability/$HOSTNAME"
 STATE_TOPIC="mijofa-iw2mqtt/state/$HOSTNAME"
-ATTRS_TOPIC="mijofa-iw2mqtt/attributes/$HOSTNAME"
+UPDATE_INTERVAL="${UPDATE_INTERVAL:-1m}"
 # FIXME: Grab LOCATION & MQTT_USER/PW/HOST from config as well
 
 # use payload_reset if location is set, otherwise payload_home
@@ -24,7 +24,7 @@ discovery_template='{"device":{
                     },
                     "source_type":"gps",
                     "icon":"mdi:router-wireless",
-                    "availability":[{"topic":"'"$AVAILABILITY_TOPIC"'",
+                    "availability":[{"topic":"'"$AVAIL_TOPIC"'",
                                      "value_template":"{{ True if (value_json is not boolean) else value_json }}",
                                      "payload_available":true,
                                      "payload_not_available":false
@@ -35,7 +35,7 @@ discovery_template='{"device":{
                     "payload_'"$home_or_reset"'":true,
                     "payload_not_home":false,
 
-                    "json_attributes_topic":"'"$AVAILABILITY_TOPIC"'",
+                    "json_attributes_topic":"'"$AVAIL_TOPIC"'",
 
                     "unique_id":"mijofa-iw2mqtt.#ID#",
                     "object_id":"mijofa-iw2mqtt.#ID#",
@@ -105,7 +105,7 @@ new_connection() {
 # rather than letting it continue to trust the outdated info.
 # FIXME: Why OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
 test -L /dev/fd || ln -s /proc/self/fd /dev/fd
-exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --will-topic "$AVAILABILITY_TOPIC" --will-payload "false" --will-retain --topic "$AVAILABILITY_TOPIC" --stdin-line --retain)
+exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PW --host $MQTT_HOST --will-topic "$AVAIL_TOPIC" --will-payload "false" --will-retain --topic "$AVAIL_TOPIC" --stdin-line --retain)
 
 # Pre-load the currently connected devices before we start listening for new devices
 list_connected_MACs | while read mac ; do
@@ -119,7 +119,7 @@ echo "${LOCATION:-true}" >&3
 {
     # FIXME: The only reason for this interval is so that we can update disconnects only a minute later.
     #        Should we just run the 'update_connections' function in it's own background loop?
-    while sleep 6 ; do
+    while sleep $UPDATE_INTERVAL ; do
         printf '[%s]: n/a: ping station ALL\n' "$(date +'%Y-%m-%d %T.000000')"
     done &
 
