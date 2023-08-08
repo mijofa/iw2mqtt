@@ -1,3 +1,10 @@
+iw2mqtt (0.2.0) unstable; urgency=medium
+
+  * Added procd initscript
+  * Added uci config support
+
+ -- Mike Abrahall <mike@abrahall.id.au>  Tue, 08 Aug 2023 23:09:06 +1000
+
 iw2mqtt (0.1.0) unstable; urgency=medium
 
   * Initial release.
