@@ -27,3 +27,9 @@ stop_service() {
     # FIXME: Doesn't do any sort of "wait 10 then SIGKILL", but that'd be really hard for this
     kill $child_pids
 }
+
+reload_service() {
+        echo "Reload not supported, forcing restart" >&2
+        stop
+        start
+}
