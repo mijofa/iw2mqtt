@@ -1,0 +1,22 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+# I don't actually want a .deb package, I want a .ipk package for OpenWRT's opkg.
+# I couldn't find any helpers in Debian for building .ipk packages, but they are very similar to .deb.
+# I'm familiar with .deb, and there's a plethora of helpers for that too.
+#
+# So I've implemented this magic here to convert the .deb file into a .ipk file.
+# The main differences are
+# * the .ipk file needs to be .tar.gz, rather than whatever 'ar' outputs that is a .deb file.
+# * the contained {data,control}.tar.xz files need to be gzip (Added with '-Zgzip' to bh_builddeb call)
+#
+# FIXME: Is there something that runs **after** dh_builddeb that might have access to the filename which would be eaiser to wrap/overwrite?
+# FIXME: Is /dev/tty here valid, or is that a dangerous thing if run non-interactively?
+# FIXME: Delete the .deb file afterwards?
+override_dh_builddeb:
+	deb_file=$$(dh_builddeb -- -Zgzip | tee /dev/tty | sed --quiet "s/^dpkg-deb: building package '.\+' in '\(.\+\)'.$$/\1/p") ; \
+		ar2tar_temp=$$(mktemp -d) ipk_file="$${deb_file%.deb}.ipk" ; \
+		echo "ar2tar: extracting '$$deb_file' to '$$ar2tar_temp'." ; ar --output "$$ar2tar_temp" x "$$deb_file" ; \
+		echo "ar2tar: packaging '$$ar2tar_temp' in '$$ipk_file'." ; tar --create --gzip --file "$$ipk_file" --directory "$$ar2tar_temp" "." ; \
+		echo "ar2tar: cleaning up '$$ar2tar_temp'." ; rm --recursive "$$ar2tar_temp"

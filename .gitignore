@@ -1,0 +1,6 @@
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/iw2mqtt.debhelper.log
+debian/iw2mqtt.substvars
+debian/iw2mqtt/
