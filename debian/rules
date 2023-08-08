@@ -11,12 +11,17 @@
 # * the .ipk file needs to be .tar.gz, rather than whatever 'ar' outputs that is a .deb file.
 # * the contained {data,control}.tar.xz files need to be gzip (Added with '-Zgzip' to bh_builddeb call)
 #
+# UPDATE: Uses .udeb instead since I want this for embedded devices with small amounts of flash storage
+#
 # FIXME: Is there something that runs **after** dh_builddeb that might have access to the filename which would be eaiser to wrap/overwrite?
 # FIXME: Is /dev/tty here valid, or is that a dangerous thing if run non-interactively?
 # FIXME: Delete the .deb file afterwards?
+# FIXME: This assumes destdir is '../' I'm pretty sure that's not valid
 override_dh_builddeb:
-	deb_file=$$(dh_builddeb -- -Zgzip | tee /dev/tty | sed --quiet "s/^dpkg-deb: building package '.\+' in '\(.\+\)'.$$/\1/p") ; \
-		ar2tar_temp=$$(mktemp -d) ipk_file="$${deb_file%.deb}.ipk" ; \
+	deb_file=$$(dh_builddeb -- -Sfixed -Zgzip | tee /dev/tty | sed --quiet "s/^\s\+Renaming .\+.deb to \(.\+.udeb\)$$/..\/\1/p") ; \
+		ar2tar_temp=$$(mktemp --tmpdir="debian/.debhelper/scratch-space/" --directory ar2tar.XXXXXXXXXX) ipk_file="$${deb_file%.udeb}.ipk" ; \
 		echo "ar2tar: extracting '$$deb_file' to '$$ar2tar_temp'." ; ar --output "$$ar2tar_temp" x "$$deb_file" ; \
 		echo "ar2tar: packaging '$$ar2tar_temp' in '$$ipk_file'." ; tar --create --gzip --file "$$ipk_file" --directory "$$ar2tar_temp" "." ; \
 		echo "ar2tar: cleaning up '$$ar2tar_temp'." ; rm --recursive "$$ar2tar_temp"
+
+#	deb_file=$$(dh_builddeb -- -Sfixed -Zgzip | tee /dev/tty | sed --quiet "s/^dpkg-deb: building package '.\+' in '\(.\+\)'.$$/\1/p") ; \

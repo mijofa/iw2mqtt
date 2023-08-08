@@ -6,6 +6,7 @@ Standards-Version: 4.6.2
 Build-Depends: debhelper-compat (= 13)
 
 Package: iw2mqtt
+XC-Package-Type: udeb
 Architecture: all
 Section: net
 Depends: mosquitto-client-nossl | mosquitto-client-ssl, busybox, iw
