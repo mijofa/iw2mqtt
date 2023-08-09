@@ -1,0 +1,112 @@
+#!/bin/ash
+
+if uci get iw2mqtt &>/dev/null ; then
+    MQTT_HOST=$(uci get iw2mqtt.mqtt_host)
+    MQTT_USER=$(uci get iw2mqtt.mqtt_user)
+    MQTT_PASS=$(uci get iw2mqtt.mqtt_pass)
+    HOSTNAME=$(uci get iw2mqtt.hostname 2>/dev/null)
+    UPDATE_INTERVAL=$(uci get iw2mqtt.update_interval 2>/dev/null)
+    ATTRIBUTES=$(uci get iw2mqtt.attributes_json 2>/dev/null)
+else
+    echo "ERROR: Not configured" >&2
+    echo "Please configure via UCI before running again. Example:" >&2
+    echo '    uci import iw2mqtt </dev/null' >&2
+    echo '    uci set iw2mqtt.mqtt_host="$MQTT_HOST"  # Required' >&2
+    echo '    uci set iw2mqtt.mqtt_user="$MQTT_USER"  # Required' >&2
+    echo '    uci set iw2mqtt.mqtt_pass="$MQTT_PASS"  # Required' >&2
+    echo '    uci set iw2mqtt.hostname="example.net"  # Optional, defaults to $(uci get system.@system[0].hostname)' >&2
+    echo '    uci set iw2mqtt.update_interval="1m"  # Optional, default: 1 minute' >&2
+    echo "    uci set iw2mqtt.attributes_json='"'{"latitude":-0.0,"longitude":0.0,"gps_accuracy":100,"source_tracker_id":"[$HOSTNAME]"}'"'  # Optional, leave blank for 'home'"  >&2
+    exit 1
+fi
+## Set the default config options
+HOSTNAME="${HOSTNAME:-$(uci get system.@system[0].hostname)}"
+AVAIL_TOPIC="mijofa-iw2mqtt/availability/$HOSTNAME"
+STATE_TOPIC="mijofa-iw2mqtt/state/$HOSTNAME"
+# Set the the necessary default
+UPDATE_INTERVAL="${UPDATE_INTERVAL:-1m}"
+ATTRIBUTES="${ATTRIBUTES:-{\"source_tracker_id\":\"$HOSTNAME\"\}}"
+
+# Use payload_reset and source_type:gps if location is set in attributes, otherwise payload_home & source_type:router
+if [[ "$ATTRIBUTES" =~ '.*"latitude".*' ]] && [[ "$ATTRIBUTES" =~ '.*"longitude".*' ]] ; then
+    home_or_reset="reset"
+    gps_or_router="gps"
+else
+    home_or_reset="home"
+    gps_or_router="router"
+fi
+
+# FIXME: This should somehow include other AP's unique availability topics
+# FIXME: The configuration_url should be something like a Luci URL, not the upstream source/documentation
+discovery_template='{"device":{
+                         "configuration_url":"https://github.com/mijofa/iw2mqtt",
+                         "manufacturer":"mijofa",
+                         "model":"iw2mqtt",
+                         "name":"OpenWRT WiFi Devices",
+                         "identifiers":["mijofa-iw2mqtt"]
+                    },
+                    "source_type":"'"$gps_or_router"'",
+                    "icon":"mdi:router-wireless",
+                    "availability":[{"topic":"'"$AVAIL_TOPIC"'",
+                                     "value_template":"{{ True if (value_json is not boolean) else value_json }}",
+                                     "payload_available":true,
+                                     "payload_not_available":false
+                    }],
+
+                    "state_topic":"'"$STATE_TOPIC"'",
+                    "value_template":"{{ \"#MAC#\" in value_json.connected_devices + value_json.previous_devices }}",
+                    "payload_'"$home_or_reset"'":true,
+                    "payload_not_home":false,
+
+                    "json_attributes_topic":"'"$AVAIL_TOPIC"'",
+
+                    "unique_id":"mijofa-iw2mqtt.#ID#",
+                    "object_id":"mijofa-iw2mqtt.#ID#",
+                    "name":"#MAC#"}'
+
+# Update the discovery topic so that HA knows to monitor this device
+# FIXME: This really should only be done once per device, not every single time there's a change
+configure_discovery_for_mac() {
+    discovery_topic="homeassistant/device_tracker/mijofa-iw2mqtt/${1//:/-}/config"
+    device_id=${1//:/-}
+    state_topic="mijofa-iw2mqtt/tracker/$device_id"
+    # FIXME: Use a json parser: https://openwrt.org/docs/guide-developer/jshn
+    discovery_data=${discovery_template//#STATE_TOPIC#/$state_topic}
+    discovery_data=${discovery_data//#MAC#/$1}
+    discovery_data=${discovery_data//#ID#/$device_id}
+    # FIXME: Should this have --retain?
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data"
+}
+
+#
+# Get currently connected MACs.
+list_connected_MACs() {
+    for nic in $(iw dev | sed --quiet '/^\s\+Interface\s/ s///p') ; do
+        iw dev $nic station dump
+    done | sed --quiet '/^Station\s\([[:xdigit:]:]\+\)\(\s(.*)\)\?$/ s//\1/p'
+}
+
+new_connection() {
+    configure_discovery_for_mac "$1"
+
+    # We don't want to update the expiry of old previous connections when a single new connections arrives.
+    # So just resend the old data, with this 1 MAC address appended,
+    # since we also don't care if there's duplicate entries in the list.
+    connected_devices_list="${connected_devices_list%]},\"$1\"]"
+    echo >&3 "{\"last_update\":$(date +'%s'),\"connected_devices\":$connected_devices_list,\"previous_devices\":$previous_devices_list}"
+    # mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
+    #                           \"connected_devices\":$connected_devices_list,
+    #                           \"previous_devices\":$previous_devices_list}"
+}
+
+update_all_connections() {
+    # We keep the previous list around for some delayed device expiry for intermittent WiFi outages.
+    # This is implemented by having the value_template simply check both lists
+    previous_devices_list="${connected_devices_list:-[]}"
+    # connected_devices_list="$(list_connected_MACs | sed 's/^/ "/;1s/^ /[/;s/$/",/;$s/,$/]/')"
+    connected_devices_list="$(list_connected_MACs | sed '1s/^/["/;:a;N;$!ba;s/\n/","/g;s/$/"]/')"
+    echo >&3 "{\"last_update\":$(date +'%s'),\"connected_devices\":$connected_devices_list,\"previous_devices\":$previous_devices_list}"
+    # mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
+    #                           \"connected_devices\":$connected_devices_list,
+    #                           \"previous_devices\":$previous_devices_list}"
+}

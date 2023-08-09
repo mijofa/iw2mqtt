@@ -1,2 +1,3 @@
 bin/iw2mqtt usr/bin/
+bin/libiw2mqtt usr/bin/
 init.d/iw2mqtt etc/init.d/
