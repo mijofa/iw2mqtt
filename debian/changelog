@@ -1,3 +1,9 @@
+iw2mqtt (0.2.3) unstable; urgency=medium
+
+  * Rework attributes to always include a source tracker id
+
+ -- Mike Abrahall <mike@abrahall.id.au>  Wed, 09 Aug 2023 12:32:18 +1000
+
 iw2mqtt (0.2.2) unstable; urgency=medium
 
   * Added "reload" service call
