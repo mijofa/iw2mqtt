@@ -6,7 +6,7 @@ if uci get iw2mqtt &>/dev/null ; then
     MQTT_PASS=$(uci get iw2mqtt.mqtt_pass)
     HOSTNAME=$(uci get iw2mqtt.hostname 2>/dev/null)
     UPDATE_INTERVAL=$(uci get iw2mqtt.update_interval 2>/dev/null)
-    LOCATION=$(uci get iw2mqtt.location_json 2>/dev/null)
+    ATTRIBUTES=$(uci get iw2mqtt.attributes_json 2>/dev/null)
 else
     echo "ERROR: Not configured" >&2
     echo "Please configure via UCI before running again. Example:" >&2
@@ -16,7 +16,7 @@ else
     echo '    uci set iw2mqtt.mqtt_pass="$MQTT_PASS"  # Required' >&2
     echo '    uci set iw2mqtt.hostname="example.net"  # Optional, defaults to $(uci get system.@system[0].hostname)' >&2
     echo '    uci set iw2mqtt.update_interval="1m"  # Optional, default: 1 minute' >&2
-    echo "    uci set iw2mqtt.location_json='"'{"latitude":-0.0,"longitude":0.0,"gps_accuracy":100}'"'  # Optional, leave blank for 'home'"  >&2
+    echo "    uci set iw2mqtt.attributes_json='"'{"latitude":-0.0,"longitude":0.0,"gps_accuracy":100,"source_tracker_id":"[$HOSTNAME]"}'"'  # Optional, leave blank for 'home'"  >&2
     exit 1
 fi
 
@@ -26,15 +26,17 @@ AVAIL_TOPIC="mijofa-iw2mqtt/availability/$HOSTNAME"
 STATE_TOPIC="mijofa-iw2mqtt/state/$HOSTNAME"
 # Set the the necessary default
 UPDATE_INTERVAL="${UPDATE_INTERVAL:-1m}"
-# Use payload_reset if location is set, otherwise payload_home
-home_or_reset="${LOCATION:+reset}"
-home_or_reset="${home_or_reset:-home}"
-# Set source_type to gps if a location is set, otherwise router
-# FIXME: source_type should be 'router' always, but routers don't seem to be able to specify any zone other than "home"
-gps_or_router="${LOCATION:+gps}"
-gps_or_router="${gps_or_router:-router}"
-# NOTE: Must go **after** the gps_or_router & home_or_reset stanzas
-LOCATION="${LOCATION:-true}"
+ATTRIBUTES="${ATTRIBUTES:-{\"source_tracker_id\":\"$HOSTNAME\"\}}"
+
+# Use payload_reset and source_type:gps if location is set in attributes, otherwise payload_home & source_type:router
+if [[ "$ATTRIBUTES" =~ '.*"latitude".*' ]] && [[ "$ATTRIBUTES" =~ '.*"longitude".*' ]] ; then
+    home_or_reset="reset"
+    gps_or_router="gps"
+else
+    home_or_reset="home"
+    gps_or_router="router"
+fi
+
 
 # FIXME: This should somehow include other AP's unique availability topics
 # FIXME: The configuration_url should be something like a Luci URL, not the upstream source/documentation
@@ -124,7 +126,7 @@ done
 update_connections
 
 # Tell HA to mark the entities as available now because the current mqtt data is valid
-mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$AVAIL_TOPIC" --message "$LOCATION" --retain
+mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$AVAIL_TOPIC" --message "$ATTRIBUTES" --retain
 
 {
     # FIXME: The only reason for this interval is so that we can update disconnects only a minute later.
