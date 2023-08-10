@@ -65,3 +65,28 @@ Inspired largely by `awilliams/wifi-presence <https://github.com/awilliams/wifi-
 The former is written in Go, and doesn't fit in the flash storage on my AP,
 the latter requires a lot of YAML config in HA instead of using MQTT discovery,
 and I don't like that it's based on IPs and assumes they are static.
+
+TODO
+----
+* Rework it to use zone names instead of GPS co-ords
+  Or at least remove the GPS co-ords when the device is "not_home" because it still shows up on the map in that location
+
+
+Zone names rework
+-----------------
+Frustratingly value_template can only set payload_{home,not_home,reset}, nothing else.
+ref: https://github.com/home-assistant/core/blob/5d3d66e47d066c74d596a326631165dea8411081/homeassistant/components/mqtt/device_tracker.py#L138
+Note the ```else:...``` sets location_name to the original msg.payload instead of just the templated payload.
+
+So I can't do something as simple as ```{{$ZONE_NAME if #MAC# in value_json.connected_devices}}```.
+
+I also don't want to have a unique state_topic per MAC address, because that causes complexities when the OpenWRT goes "unavailable" and comes back.
+If that MAC isn't connected anymore, the OpenWRT won't send any updates, but HA will remember the last state.
+
+Maybe I can use the json_attributes_topic for connected_devices, update that every min or so.
+**Then** update the state_topic with the zone name with a template like ```{"not_home" if #MAC# not in state_attr(entity_id, "connected_devices")}```.
+
+HA won't rerun the value_template when the json_attributes_topic updates, but I might be able to just repeat the state_topic update to get a similar effect.
+Might that run into thread/concurrency issues with the value_template being run before the json_attributes are processed?
+
+ref: "Temporal mismatches" here: https://www.home-assistant.io/integrations/sensor.mqtt/#json-attributes-template-configuration
