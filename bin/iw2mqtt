@@ -2,13 +2,14 @@
 
 . libiw2mqtt
 
+# Moved below because older versions of ash don't support 'exec 3> ...'
+#
 # Set up state_topic and mqtt's "last will and testament".
 # This way when the script exits uncleanly it tells HA that the entities are unavailable,
 # rather than letting it continue to trust the outdated info.
-# FIXME: Why OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
-test -L /dev/fd || ln -s /proc/self/fd /dev/fd
-exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --will-topic "$AVAIL_TOPIC" --will-payload "false" --will-retain --topic "$STATE_TOPIC" --stdin-line)
-
+# # FIXME: Why OpenWRT doesn't have '/dev/fd' by default? OpenWRT's ash requires it for this?
+# test -L /dev/fd || ln -s /proc/self/fd /dev/fd
+# exec 3> >(exec mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --will-topic "$AVAIL_TOPIC" --will-payload "false" --will-retain --topic "$STATE_TOPIC" --stdin-line)
 
 # Pre-load the currently connected devices before we start listening for new devices
 list_connected_MACs | while read mac ; do
@@ -17,7 +18,11 @@ done
 update_all_connections
 
 # Tell HA to mark the entities as available now because the current mqtt data is valid
-mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$AVAIL_TOPIC" --message "$ATTRIBUTES" --retain
+# and set up MQTT's "last will and testament" so that things go automatically unavailable when we die.
+# FIXME: make `--repeat-delay` use `$UPDATE_INTERVAL`, but that expects to understand '1m' as '60 seconds'
+mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$AVAIL_TOPIC" --message "$ATTRIBUTES" --retain \
+    --repeat --repeat-delay 60 --will-topic "$AVAIL_TOPIC" --will-payload "false" --will-retain &
+trap "kill -9 $!" EXIT
 
 {
     # FIXME: The only reason for this interval is so that we can update disconnects only a minute later.

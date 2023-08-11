@@ -93,7 +93,7 @@ new_connection() {
     # So just resend the old data, with this 1 MAC address appended,
     # since we also don't care if there's duplicate entries in the list.
     connected_devices_list="${connected_devices_list%]},\"$1\"]"
-    echo >&3 "{\"last_update\":$(date +'%s'),\"connected_devices\":$connected_devices_list,\"previous_devices\":$previous_devices_list}"
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$STATE_TOPIC" --message "{\"last_update\":$(date +'%s'),\"connected_devices\":$connected_devices_list,\"previous_devices\":$previous_devices_list}"
     # mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
     #                           \"connected_devices\":$connected_devices_list,
     #                           \"previous_devices\":$previous_devices_list}"
@@ -105,7 +105,7 @@ update_all_connections() {
     previous_devices_list="${connected_devices_list:-[]}"
     # connected_devices_list="$(list_connected_MACs | sed 's/^/ "/;1s/^ /[/;s/$/",/;$s/,$/]/')"
     connected_devices_list="$(list_connected_MACs | sed '1s/^/["/;:a;N;$!ba;s/\n/","/g;s/$/"]/')"
-    echo >&3 "{\"last_update\":$(date +'%s'),\"connected_devices\":$connected_devices_list,\"previous_devices\":$previous_devices_list}"
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$STATE_TOPIC" --message "{\"last_update\":$(date +'%s'),\"connected_devices\":$connected_devices_list,\"previous_devices\":$previous_devices_list}"
     # mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
     #                           \"connected_devices\":$connected_devices_list,
     #                           \"previous_devices\":$previous_devices_list}"
