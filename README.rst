@@ -84,7 +84,7 @@ I also don't want to have a unique state_topic per MAC address, because that cau
 If that MAC isn't connected anymore, the OpenWRT won't send any updates, but HA will remember the last state.
 
 Maybe I can use the json_attributes_topic for connected_devices, update that every min or so.
-**Then** update the state_topic with the zone name with a template like ```{"not_home" if #MAC# not in state_attr(entity_id, "connected_devices")}```.
+**Then** set the state_topic with to the zone name regardless and with a template like ```{"not_home" if #MAC# not in state_attr(entity_id, "connected_devices" else value)}```.
 
 HA won't rerun the value_template when the json_attributes_topic updates, but I might be able to just repeat the state_topic update to get a similar effect.
 Might that run into thread/concurrency issues with the value_template being run before the json_attributes are processed?
