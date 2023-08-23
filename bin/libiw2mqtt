@@ -75,7 +75,7 @@ configure_discovery_for_mac() {
     discovery_data=${discovery_data//#MAC#/$1}
     discovery_data=${discovery_data//#ID#/$device_id}
     # FIXME: Should this have --retain?
-    mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data"
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$discovery_topic" --message "$discovery_data" --retain
 }
 
 #
