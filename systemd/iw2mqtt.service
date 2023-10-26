@@ -1,0 +1,20 @@
+[Unit]
+Description=MQTT Device Trackers for WiFi clients
+After=network-online.target
+
+[Service]
+Environment=CONFIG_FROM_SYSTEMD=yes
+Environment=HOSTNAME=%H
+# Rest of the config should be set in the override.conf file
+
+ExecStart=iw2mqtt
+
+ExecStopPost=mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic mijofa-iw2mqtt/availability/%H --message "false" --retain
+
+## FIXME: these are copied from most of PrisonPC's systemd jobs, but apparently are "NOT APPROPRIATE for" any of them
+Restart=on-failure
+RestartSec=30s
+StartLimitBurst=0
+
+[Install]
+WantedBy=multi-user.target

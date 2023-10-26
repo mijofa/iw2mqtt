@@ -7,6 +7,12 @@ if uci get iw2mqtt &>/dev/null ; then
     HOSTNAME=$(uci get iw2mqtt.hostname 2>/dev/null)
     UPDATE_INTERVAL=$(uci get iw2mqtt.update_interval 2>/dev/null)
     ATTRIBUTES=$(uci get iw2mqtt.attributes_json 2>/dev/null)
+elif [[ -n "$CONFIG_FROM_SYSTEMD" ]] ; then
+    if [[ -z "$MQTT_HOST" ]] || [[ -z "$MQTT_USER" ]] || [[ -z "$MQTT_PASS" ]] ; then
+        echo "ERROR: Not configured" >&2
+        echo "Need at least MQTT_HOST, MQTT_USER, & MQTT_PASS set" >&2
+        exit 1
+    fi
 else
     echo "ERROR: Not configured" >&2
     echo "Please configure via UCI before running again. Example:" >&2

@@ -1,0 +1,9 @@
+[Service]
+Environment=MQTT_HOST=
+Environment=MQTT_USER=
+Environment=MQTT_PASS=
+
+# Optional config options
+# Environment=HOSTNAME=  # Best left alone
+# Environment=UPDATE_INTERVAL=  # Defaults to 1 minute
+# Environment=ATTRIBUTES=  # Useful for zones other than "home"

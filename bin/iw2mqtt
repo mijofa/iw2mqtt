@@ -1,4 +1,4 @@
-#!/bin/ash
+#!/bin/busybox ash
 
 . libiw2mqtt
 

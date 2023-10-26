@@ -1,4 +1,7 @@
 #!/bin/sh /etc/rc.common
+#
+# IMPORTANT: This initscript does not work on non OpenWRT systems!
+#            Use the systemd unit if you are trying to run this on a Debian system.
 
 USE_PROCD=1
 

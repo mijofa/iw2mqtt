@@ -9,9 +9,10 @@ Package: iw2mqtt
 XC-Package-Type: udeb
 Architecture: all
 Section: net
-# Busybox (1.33.2-2)'s ash did not support `exec 3> >(...)` while 1.35.0-5 did.
-# I'm just assuming it appread in 1.34 or 1.35 and not bothering to dig deeper
-Depends: mosquitto-client-nossl | mosquitto-client-ssl, busybox (>= 1.35.0), iw, procd
+Depends: mosquitto-clients | mosquitto-client-nossl | mosquitto-client-ssl, busybox, iw
+# FIXME: This is an actual dependency, but only on OpenWRT.
+#        Since I'm using the same deb & control file for Debian, this needs to be slightly optional
+Recommends: procd
 Description: Provide MQTT Device Trackers of WiFi clients
  Publishes WiFi client connections info via MQTT for Home Assistant integratio
 
