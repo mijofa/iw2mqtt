@@ -104,7 +104,7 @@ update_all_connections() {
     # This is implemented by having the value_template simply check both lists
     previous_devices_list="${connected_devices_list:-[]}"
     # connected_devices_list="$(list_connected_MACs | sed 's/^/ "/;1s/^ /[/;s/$/",/;$s/,$/]/')"
-    connected_devices_list="$(list_connected_MACs | sed '1s/^/["/;:a;N;$!ba;s/\n/","/g;s/$/"]/')"
+    connected_devices_list="$(list_connected_MACs | sed '1s/^/["/;:a;N;$!ba;s/\n/","/g')"'"]'
     mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$STATE_TOPIC" --message "{\"last_update\":$(date +'%s'),\"connected_devices\":$connected_devices_list,\"previous_devices\":$previous_devices_list}"
     # mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
     #                           \"connected_devices\":$connected_devices_list,
