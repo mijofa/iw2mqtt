@@ -1,10 +1,17 @@
+iw2mqtt (0.3.1) unstable; urgency=medium
+
+  * Retain discovery info
+  * Added availability heartbeat to better handle broker restarts
+
+ -- Mike Abrahall <mike@cyber.com.au>  Thu, 26 Oct 2023 14:33:12 +1100
+
 iw2mqtt (0.3.0) unstable; urgency=medium
 
   * Updated dependency versions
   * Split most functions out to a separate lib… file
   * Updated documentation
 
- -- Mike Abrahall <mike@cyber.com.au>  Wed, 09 Aug 2023 21:43:16 +1000
+ -- Mike Abrahall <mike@abrahall.id.au>  Wed, 09 Aug 2023 21:43:16 +1000
 
 iw2mqtt (0.2.3) unstable; urgency=medium
 
