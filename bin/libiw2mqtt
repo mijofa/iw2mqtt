@@ -109,4 +109,7 @@ update_all_connections() {
     # mqtt_pub "$STATE_TOPIC" "{\"last_update\":$(date +'%s'),
     #                           \"connected_devices\":$connected_devices_list,
     #                           \"previous_devices\":$previous_devices_list}"
+
+    # Tell HA to mark the entities as available now because the current mqtt data is valid
+    mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$AVAIL_TOPIC" --message "$ATTRIBUTES" --retain
 }

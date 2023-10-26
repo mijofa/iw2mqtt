@@ -17,11 +17,12 @@ list_connected_MACs | while read mac ; do
 done
 update_all_connections
 
-# Tell HA to mark the entities as available now because the current mqtt data is valid
-# and set up MQTT's "last will and testament" so that things go automatically unavailable when we die.
-# FIXME: make `--repeat-delay` use `$UPDATE_INTERVAL`, but that expects to understand '1m' as '60 seconds'
-mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic "$AVAIL_TOPIC" --message "$ATTRIBUTES" --retain \
-    --repeat --repeat-delay 60 --will-topic "$AVAIL_TOPIC" --will-payload "false" --will-retain &
+# Set up MQTT's "last will and testament" so that things go automatically unavailable when we die.
+# NOTE: Using '--topic' & '--filter-out' because mosquitto_sub doesn't work without specifying a topic,
+#       but since I don't actually care to ready that topic I filter it out to avoid printing anything.
+mosquitto_sub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST \
+    --topic "$AVAIL_TOPIC" --filter-out "$AVAIL_TOPIC" \
+    --will-topic "$AVAIL_TOPIC" --will-payload "false" --will-retain  &
 trap "kill -9 $!" EXIT
 
 {
