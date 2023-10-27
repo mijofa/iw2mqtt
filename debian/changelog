@@ -1,3 +1,9 @@
+iw2mqtt (0.4.1) unstable; urgency=medium
+
+  * Added systemd hardening
+
+ -- Mike Abrahall <mike@abrahall.id.au>  Fri, 27 Oct 2023 22:52:21 +1100
+
 iw2mqtt (0.4.0) unstable; urgency=medium
 
   * Fixed bug where having only 1 connected device would break the json

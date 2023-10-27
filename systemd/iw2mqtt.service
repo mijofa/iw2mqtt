@@ -2,6 +2,9 @@
 Description=MQTT Device Trackers for WiFi clients
 After=network-online.target
 
+[Install]
+WantedBy=multi-user.target
+
 [Service]
 Environment=CONFIG_FROM_SYSTEMD=yes
 Environment=HOSTNAME=%H
@@ -11,10 +14,44 @@ ExecStart=iw2mqtt
 
 ExecStopPost=mosquitto_pub --username $MQTT_USER --pw $MQTT_PASS --host $MQTT_HOST --topic mijofa-iw2mqtt/availability/%H --message "false" --retain
 
-## FIXME: these are copied from most of PrisonPC's systemd jobs, but apparently are "NOT APPROPRIATE for" any of them
 Restart=on-failure
-RestartSec=30s
-StartLimitBurst=0
 
-[Install]
-WantedBy=multi-user.target
+## General hardening
+DynamicUser=true
+
+MemoryDenyWriteExecute=true
+LockPersonality=true
+
+RestrictAddressFamilies=AF_INET AF_INET6
+# Needed for `iw dev` to work properly
+RestrictAddressFamilies=AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+
+CapabilityBoundingSet=
+
+PrivateDevices=true
+PrivateUsers=true
+
+# FIXME: I can't make this work because I'm relying on DNS.
+#        I considered allowing **all** local IP addresses,
+#        but IPv6 adds too much complexity there for me to bother
+#IPAddressDeny=any
+#IPAddressAllow=
+
+ProtectClock=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectHome=true
+ProtectProc=invisible
+ProcSubset=pid
+
+SystemCallArchitectures=native
+# FIXME: I should be able to get a lot more specific with this.
+#        I tried "@basic-io @network-io @signal" and it wouldn't even start
+SystemCallFilter=@system-service
+# SystemCallFilter=~@privileged
+SystemCallFilter=~@resources
